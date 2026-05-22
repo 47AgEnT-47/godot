@@ -168,20 +168,11 @@ jobs:
           cp bin/android_release.apk Godot_v4.6.3-templates/
           cp bin/android_source.zip Godot_v4.6.3-templates/
           
-          # Создаем папку android_source и распаковываем туда zip, чтобы получить Gradle исходники
-          mkdir -p Godot_v4.6.3-templates/android_source
-          unzip -q Godot_v4.6.3-templates/android_source.zip -d Godot_v4.6.3-templates/android_source/
-          
           # Записываем версию в файл
           echo "4.6.3.stable" > Godot_v4.6.3-templates/version.txt
-
-      - name: Pack Everything into Final Zip
-        run: |
-          # Пакуем так, чтобы внутри ZIP была папка Godot_v4.6.3-templates
-          zip -r Godot_v4.6.3-templates.zip Godot_v4.6.3-templates/
 
       - name: Upload Final Archive
         uses: actions/upload-artifact@v4
         with:
           name: Godot_v4.6.3-templates
-          path: Godot_v4.6.3-templates.zip
+          path: Godot_v4.6.3-templates/
