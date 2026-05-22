@@ -164,6 +164,7 @@ jobs:
           mkdir -p Godot_v4.6.3-templates
           
           # Копируем APK и архив исходников из bin/ в корень целевой папки
+          ls bin/
           cp bin/android_debug.apk Godot_v4.6.3-templates/
           cp bin/android_release.apk Godot_v4.6.3-templates/
           cp bin/android_source.zip Godot_v4.6.3-templates/
