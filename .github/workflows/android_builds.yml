@@ -79,18 +79,12 @@ jobs:
           cd ../../..
           ls -l bin/
 
-      # Сохраняем скомпилированные шаблоны/APK из папки bin во временный артефакт
-      - name: Upload temporary build artifacts
-        uses: actions/upload-artifact@v4
+      # Скрытый кэш для сборки файлов из разных матриц воедино
+      - name: Cache compiled APKs for final packaging
+        uses: actions/cache/save@v4
         with:
-          name: build-output-${{ matrix.target }}
           path: bin/
-          retention-days: 1
-
-      - name: Upload artifact
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: ${{ matrix.cache-name }}
+          key: secret-bin-transfer-${{ github.run_id }}-${{ matrix.target }}
 
       - name: Generate Instrumented test APKs
         if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
@@ -144,49 +138,50 @@ jobs:
             exit_code=0
           fi
           exit "$exit_code"
-          
+
+  # Создание точной структуры шаблонов
   package-all:
     runs-on: ubuntu-24.04
     needs: build-android
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v6
+      # Восстанавливаем файлы сборки Debug
+      - name: Restore Debug APK
+        uses: actions/cache/restore@v4
         with:
-          submodules: recursive
-
-      - name: Download Debug Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output-template_debug
           path: bin/
+          key: secret-bin-transfer-${{ github.run_id }}-${{ 'template_debug' }}
 
-      - name: Download Release Artifacts
-        uses: actions/download-artifact@v4
+      # Восстанавливаем файлы сборки Release в ту же папку bin/
+      - name: Restore Release APK
+        uses: actions/cache/restore@v4
         with:
-          name: build-output-template_release
           path: bin/
+          key: secret-bin-transfer-${{ github.run_id }}-${{ 'template_release' }}
 
-      - name: Create version file
-        run: echo "4.6.3.stable" > version.txt
-
-      - name: Prepare Export Package Structure
+      - name: Structure Template Directory
         run: |
-          mkdir -p export_package/platform/android
+          # Создаем целевую папку верхнего уровня
+          mkdir -p Godot_v4.6.3-templates
           
-          cp -r platform/android/java export_package/platform/android/
+          # Копируем APK и архив исходников из bin/ в корень целевой папки
+          cp bin/android_debug.apk Godot_v4.6.3-templates/
+          cp bin/android_release.apk Godot_v4.6.3-templates/
+          cp bin/android_source.zip Godot_v4.6.3-templates/
           
-          cp -r bin export_package/
+          # Создаем папку android_source и распаковываем туда zip, чтобы получить Gradle исходники
+          mkdir -p Godot_v4.6.3-templates/android_source
+          unzip -q Godot_v4.6.3-templates/android_source.zip -d Godot_v4.6.3-templates/android_source/
           
-          cp version.txt export_package/
+          # Записываем версию в файл
+          echo "4.6.3.stable" > Godot_v4.6.3-templates/version.txt
 
-      - name: Pack Gradle source and APKs into zip
+      - name: Pack Everything into Final Zip
         run: |
-          cd export_package
-          zip -r ../android-gradle-build-package.zip .
-          cd ..
+          # Пакуем так, чтобы внутри ZIP была папка Godot_v4.6.3-templates
+          zip -r Godot_v4.6.3-templates.zip Godot_v4.6.3-templates/
 
       - name: Upload Final Archive
         uses: actions/upload-artifact@v4
         with:
-          name: android-full-package
-          path: android-gradle-build-package.zip
+          name: Godot_v4.6.3-templates
+          path: Godot_v4.6.3-templates.zip
