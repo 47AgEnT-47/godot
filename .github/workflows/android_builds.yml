@@ -97,44 +97,56 @@ jobs:
         with:
           submodules: recursive
 
-      # Восстанавливаем скомпилированный Debug в отдельную папку
+      # Восстанавливаем скомпилированный Debug в папку bin/
       - name: Restore Debug Files
         uses: actions/cache/restore@v4
         with:
-          path: bin_debug/
-          key: secret-bin-transfer-${{ github.run_id }}-${{ 'template_debug' }}
+          path: bin/
+          key: secret-bin-transfer-${{ github.run_id }}-template_debug
 
-      # Восстанавливаем скомпилированный Release в другую папку
+      # Переименовываем bin в bin_debug и создаем чистую bin для следующего шага
+      - name: Move Debug Files
+        run: |
+          mv bin bin_debug
+          mkdir bin
+
+      # Восстанавливаем скомпилированный Release в папку bin/
       - name: Restore Release Files
         uses: actions/cache/restore@v4
         with:
-          path: bin_release/
-          key: secret-bin-transfer-${{ github.run_id }}-${{ 'template_release' }}
+          path: bin/
+          key: secret-bin-transfer-${{ github.run_id }}-template_release
+
+      # Переименовываем bin в bin_release
+      - name: Move Release Files
+        run: mv bin bin_release
 
       - name: Structure Template Directory
         run: |
           mkdir -p Godot_v4.6.3-templates
           
-
+          # 1. Копируем готовые APK файлы в корень шаблонов
           cp bin_debug/android_debug.apk Godot_v4.6.3-templates/
           cp bin_release/android_release.apk Godot_v4.6.3-templates/
           
-          # 3. Собираем чистый исходный код для android_source.zip
-          # Используем файлы из platform/android/java исходного кода репозитория
+          # 2. Создаем временную папку для сборки исходного кода
           mkdir -p tmp_source_build
           cp -r platform/android/java/* tmp_source_build/
           
-          # 4. Копируем обе собранные библиотеки (.aar) в папку libs будущего архива
-          mkdir -p tmp_source_build/libs
-          cp bin_debug/godot-lib.template_debug.aar tmp_source_build/libs/
-          cp bin_release/godot-lib.template_release.aar tmp_source_build/libs/
+          # 3. Создаем папки debug и release внутри папки libs
+          mkdir -p tmp_source_build/libs/debug
+          mkdir -p tmp_source_build/libs/release
           
-          # 5. Упаковываем весь этот код внутрь архива android_source.zip
+          # 4. Копируем файлы библиотек (.aar) в свои новые папки
+          cp bin_debug/godot-lib.template_debug.aar tmp_source_build/libs/debug/
+          cp bin_release/godot-lib.template_release.aar tmp_source_build/libs/release/
+          
+          # 5. Упаковываем код внутрь архива android_source.zip
           cd tmp_source_build
           zip -r ../Godot_v4.6.3-templates/android_source.zip .
           cd ..
           
-          # 6. Записываем версию в корень
+          # 6. Записываем версию в корень папки шаблонов
           echo "4.6.3.stable" > Godot_v4.6.3-templates/version.txt
           
           # Очищаем временную папку сборки
