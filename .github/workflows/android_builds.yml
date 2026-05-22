@@ -79,6 +79,14 @@ jobs:
           cd ../../..
           ls -l bin/
 
+      # Сохраняем скомпилированные шаблоны/APK из папки bin во временный артефакт
+      - name: Upload temporary build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-${{ matrix.target }}
+          path: bin/
+          retention-days: 1
+
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
@@ -136,3 +144,49 @@ jobs:
             exit_code=0
           fi
           exit "$exit_code"
+          
+  package-all:
+    runs-on: ubuntu-24.04
+    needs: build-android
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Download Debug Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-template_debug
+          path: bin/
+
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-template_release
+          path: bin/
+
+      - name: Create version file
+        run: echo "4.6.3.stable" > version.txt
+
+      - name: Prepare Export Package Structure
+        run: |
+          mkdir -p export_package/platform/android
+          
+          cp -r platform/android/java export_package/platform/android/
+          
+          cp -r bin export_package/
+          
+          cp version.txt export_package/
+
+      - name: Pack Gradle source and APKs into zip
+        run: |
+          cd export_package
+          zip -r ../android-gradle-build-package.zip .
+          cd ..
+
+      - name: Upload Final Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-full-package
+          path: android-gradle-build-package.zip
