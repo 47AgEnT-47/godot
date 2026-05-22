@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build-android
     steps:
-      # Скачиваем исходный код репозитория для получения чистой структуры Gradle
+      # Скачиваем код для общих утилит (если нужны)
       - name: Checkout source code
         uses: actions/checkout@v6
         with:
@@ -129,19 +129,19 @@ jobs:
           cp bin_debug/android_debug.apk Godot_v4.6.3-templates/
           cp bin_release/android_release.apk Godot_v4.6.3-templates/
           
-          # 2. Создаем временную папку для сборки исходного кода
+          # 2. Берем готовый заводской архив android_source.zip и распаковываем его во временную папку
           mkdir -p tmp_source_build
-          cp -r platform/android/java/* tmp_source_build/
+          unzip bin_debug/android_source.zip -d tmp_source_build/
           
-          # 3. Создаем папки debug и release внутри папки libs
+          # 3. Создаем структуру debug/release внутри папки libs распакованного архива
           mkdir -p tmp_source_build/libs/debug
           mkdir -p tmp_source_build/libs/release
           
-          # 4. Копируем файлы библиотек (.aar) в свои новые папки
+          # 4. Копируем файлы библиотек (.aar) в новые подпапки
           cp bin_debug/godot-lib.template_debug.aar tmp_source_build/libs/debug/
           cp bin_release/godot-lib.template_release.aar tmp_source_build/libs/release/
           
-          # 5. Упаковываем код внутрь архива android_source.zip
+          # 5. Упаковываем все обратно в правильной структуре
           cd tmp_source_build
           zip -r ../Godot_v4.6.3-templates/android_source.zip .
           cd ..
