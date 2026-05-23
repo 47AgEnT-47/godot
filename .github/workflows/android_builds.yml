@@ -4,10 +4,8 @@ on:
     secrets:
       SERVICE_ACCOUNT_KEY:
         required: true
-
   workflow_dispatch:
 
-# Global Settings
 env:
   SCONS_FLAGS: >-
     module_text_server_fb_enabled=yes
@@ -25,23 +23,21 @@ jobs:
           - name: Template arm64 (target=template_debug, arch=arm64)
             cache-name: android-template-arm64-debug
             target: template_debug
-            instrumented_tests: true
             scons-flags: arch=arm64
 
           - name: Template arm64 (target=template_release, arch=arm64)
             cache-name: android-template-arm64-release
             target: template_release
-            instrumented_tests: false
             scons-flags: arch=arm64
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
@@ -72,88 +68,71 @@ jobs:
         continue-on-error: true
 
       - name: Generate Godot templates
-        if: matrix.target == 'template_debug' || matrix.target == 'template_release'
         run: |
           cd platform/android/java
           ./gradlew generateGodotTemplates
-          cd ../../..
-          ls -l bin/
 
-      # Сохраняем папку bin для текущей матрицы
-      - name: Cache compiled APKs for final packaging
-        uses: actions/cache/save@v4
+      - name: Upload Temporary Build
+        uses: actions/upload-artifact@v4
         with:
+          name: build-${{ matrix.target }}
           path: bin/
-          key: secret-bin-transfer-${{ github.run_id }}-${{ matrix.target }}
 
-  # Создание точной структуры шаблонов без лишних папок
   package-all:
     runs-on: ubuntu-24.04
     needs: build-android
+    # Разрешаем джобу удалять артефакты
+    permissions:
+      actions: write
+      contents: read
     steps:
-      # Скачиваем код для общих утилит (если нужны)
       - name: Checkout source code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # Восстанавливаем скомпилированный Debug в папку bin/
-      - name: Restore Debug Files
-        uses: actions/cache/restore@v4
+      - name: Download Debug Artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: bin/
-          key: secret-bin-transfer-${{ github.run_id }}-template_debug
+          name: build-template_debug
+          path: bin_debug
 
-      # Переименовываем bin в bin_debug и создаем чистую bin для следующего шага
-      - name: Move Debug Files
-        run: |
-          mv bin bin_debug
-          mkdir bin
-
-      # Восстанавливаем скомпилированный Release в папку bin/
-      - name: Restore Release Files
-        uses: actions/cache/restore@v4
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: bin/
-          key: secret-bin-transfer-${{ github.run_id }}-template_release
-
-      # Переименовываем bin в bin_release
-      - name: Move Release Files
-        run: mv bin bin_release
+          name: build-template_release
+          path: bin_release
 
       - name: Structure Template Directory
         run: |
-          mkdir -p Godot_v4.6.3-templates
+          mkdir -p Godot_v4.6.3-templates/tmp_source_build
           
-          # 1. Копируем готовые APK файлы в корень шаблонов
           cp bin_debug/android_debug.apk Godot_v4.6.3-templates/
           cp bin_release/android_release.apk Godot_v4.6.3-templates/
           
-          # 2. Берем готовый заводской архив android_source.zip и распаковываем его во временную папку
-          mkdir -p tmp_source_build
-          unzip bin_debug/android_source.zip -d tmp_source_build/
+          unzip bin_debug/android_source.zip -d Godot_v4.6.3-templates/tmp_source_build/
           
-          # 3. Создаем структуру debug/release внутри папки libs распакованного архива
-          mkdir -p tmp_source_build/libs/debug
-          mkdir -p tmp_source_build/libs/release
+          mkdir -p Godot_v4.6.3-templates/tmp_source_build/libs/{debug,release}
+          cp bin_debug/godot-lib.template_debug.aar Godot_v4.6.3-templates/tmp_source_build/libs/debug/
+          cp bin_release/godot-lib.template_release.aar Godot_v4.6.3-templates/tmp_source_build/libs/release/
           
-          # 4. Копируем файлы библиотек (.aar) в новые подпапки
-          cp bin_debug/godot-lib.template_debug.aar tmp_source_build/libs/debug/
-          cp bin_release/godot-lib.template_release.aar tmp_source_build/libs/release/
+          cd Godot_v4.6.3-templates/tmp_source_build
+          zip -r ../android_source.zip .
+          cd ../..
           
-          # 5. Упаковываем все обратно в правильной структуре
-          cd tmp_source_build
-          zip -r ../Godot_v4.6.3-templates/android_source.zip .
-          cd ..
-          
-          # 6. Записываем версию в корень папки шаблонов
           echo "4.6.3.stable" > Godot_v4.6.3-templates/version.txt
-          
-          # Очищаем временную папку сборки
-          rm -rf tmp_source_build
+          rm -rf Godot_v4.6.3-templates/tmp_source_build
 
       - name: Upload Final Archive
         uses: actions/upload-artifact@v4
         with:
           name: Godot_v4.6.3-templates
           path: Godot_v4.6.3-templates/
+
+      # ПРОСТОЕ УДАЛЕНИЕ В ОДНУ СТРОКУ
+      - name: Delete Temporary Artifacts
+        uses: geekyeggo/delete-artifact@v4
+        with:
+          name: |
+            build-template_debug
+            build-template_release
