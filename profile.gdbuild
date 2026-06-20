@@ -1,8 +1,12 @@
 {
     "disabled_build_options": {
         "disable_3d": true,
+        "disable_3d_physics": true,
+        "disable_navigation": true,
         "disable_xr": true,
-        "disable_advanced_gui": false,
+        "forward_plus_renderer": false,
+        "forward_mobile_renderer": false,
+        "rendering_device": false,
         "module_audio_enabled": false,
         "module_ogg_enabled": false,
         "module_vorbis_enabled": false,
@@ -22,7 +26,8 @@
         "module_squish_enabled": false,
         "module_tinyexr_enabled": false,
         "module_vhacd_enabled": false,
-        "module_webrtc_enabled": false
+        "module_webrtc_enabled": false,
+        "deprecated": false
     },
     "type": "build_profile"
 }
