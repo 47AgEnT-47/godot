@@ -4,13 +4,10 @@ on:
     secrets:
       SERVICE_ACCOUNT_KEY:
         required: true
-
   workflow_dispatch:
 
-# Global Settings
 env:
   SCONS_FLAGS: >-
-    dev_mode=yes
     module_text_server_fb_enabled=yes
     swappy=yes
 
@@ -23,34 +20,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Editor (target=editor)
-            cache-name: android-editor
-            target: editor
-            instrumented_tests: true
-            scons-flags: >-
-              arch=arm64
-              production=yes
-
-          - name: Template arm32 (target=template_debug, arch=arm32)
-            cache-name: android-template-arm32
-            target: template_debug
-            instrumented_tests: false
-            scons-flags: arch=arm32
-
           - name: Template arm64 (target=template_debug, arch=arm64)
-            cache-name: android-template-arm64
+            cache-name: android-template-arm64-debug
             target: template_debug
-            instrumented_tests: true
+            scons-flags: arch=arm64
+
+          - name: Template arm64 (target=template_release, arch=arm64)
+            cache-name: android-template-arm64-release
+            target: template_release
             scons-flags: arch=arm64
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
@@ -70,7 +57,7 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }} build_profile=profile.gdbuild progress=yes
           platform: android
           target: ${{ matrix.target }}
 
@@ -81,97 +68,70 @@ jobs:
         continue-on-error: true
 
       - name: Generate Godot templates
-        if: matrix.target == 'template_debug'
         run: |
           cd platform/android/java
           ./gradlew generateGodotTemplates
-          cd ../../..
-          ls -l bin/
 
-      - name: Generate Godot editor
-        if: matrix.target == 'editor'
+      - name: Upload Temporary Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.target }}
+          path: bin/
+
+  package-all:
+    runs-on: ubuntu-24.04
+    needs: build-android
+    # Разрешаем джобу удалять артефакты
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download Debug Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-template_debug
+          path: bin_debug
+
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-template_release
+          path: bin_release
+
+      - name: Structure Template Directory
         run: |
-          cd platform/android/java
-          ./gradlew generateGodotEditor
-          ./gradlew generateGodotHorizonOSEditor
-          ./gradlew generateGodotPicoOSEditor
-          cd ../../..
-          ls -l bin/android_editor_builds/
+          mkdir -p Godot_v4.7.0-templates/tmp_source_build
+          
+          cp bin_debug/android_debug.apk Godot_v4.7.0-templates/
+          cp bin_release/android_release.apk Godot_v4.7.0-templates/
+          
+          unzip bin_debug/android_source.zip -d Godot_v4.7.0-templates/tmp_source_build/
+          
+          mkdir -p Godot_v4.7.0-templates/tmp_source_build/libs/{debug,release}
+          cp bin_debug/godot-lib.template_debug.aar Godot_v4.7.0-templates/tmp_source_build/libs/debug/
+          cp bin_release/godot-lib.template_release.aar Godot_v4.7.0-templates/tmp_source_build/libs/release/
+          
+          cd Godot_v4.7.0-templates/tmp_source_build
+          zip -r ../android_source.zip .
+          cd ../..
+          
+          echo "4.7.0.stable" > Godot_v4.7.0-templates/version.txt
+          rm -rf Godot_v4.7.0-templates/tmp_source_build
 
-          # Separate different editors for multiple artifacts
-          mkdir horizonos
-          mv bin/android_editor_builds/*-horizonos-* horizonos
-          mkdir picoos
-          mv bin/android_editor_builds/*-picoos-* picoos
-
-      - name: Upload artifact
-        uses: ./.github/actions/upload-artifact
+      - name: Upload Final Archive
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.cache-name }}
+          name: Godot_v4.7.0-templates
+          path: Godot_v4.7.0-templates/
 
-      - name: Upload artifact (Horizon OS)
-        if: matrix.target == 'editor'
-        uses: ./.github/actions/upload-artifact
+      - name: Delete Temporary Artifacts
+        uses: geekyeggo/delete-artifact@v4
         with:
-          name: ${{ matrix.cache-name }}-horizonos
-          path: horizonos
-
-      - name: Upload artifact (PICO OS)
-        if: matrix.target == 'editor'
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: ${{ matrix.cache-name }}-picoos
-          path: picoos
-
-      - name: Generate Instrumented test APKs
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        run: |
-          cd platform/android/java
-          if [ "${{ matrix.target }}" = "editor" ]; then
-            ./gradlew :editor:assembleAndroidAndroidTest :editor:assembleAndroidDebug -Pperform_signing=true
-          else
-            ./gradlew :app:assembleAndroidTest :app:assembleInstrumentedDebug -Pperform_signing=true
-          fi
-          cd ../../..
-
-      - name: Create credentials file
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
-
-      - name: Set up gcloud CLI
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Run tests on Firebase Test Lab
-        if: matrix.instrumented_tests && github.repository == 'godotengine/godot' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        run: |
-          set +e
-
-          if [ "${{ matrix.target }}" = "editor" ]; then
-            APP_APK="platform/android/java/editor/build/outputs/apk/android/debug/android_editor-android-debug.apk"
-            TEST_APK="platform/android/java/editor/build/outputs/apk/androidTest/android/debug/android_editor-android-debug-androidTest.apk"
-          else
-            APP_APK="platform/android/java/app/build/outputs/apk/instrumented/debug/android_debug.apk"
-            TEST_APK="platform/android/java/app/build/outputs/apk/androidTest/instrumented/debug/app-instrumented-debug-androidTest.apk"
-          fi
-
-          output=$(gcloud firebase test android run \
-            --type instrumentation \
-            --app "$APP_APK" \
-            --test "$TEST_APK" \
-            --device model=MediumPhone.arm,version=26 \
-            --device model=starlte,version=29 \
-            --device model=MediumPhone.arm,version=32 \
-            --device model=MediumTablet.arm,version=35 \
-            --device model=rango,version=36 \
-            --use-orchestrator \
-            --timeout 2m 2>&1)
-          exit_code=$?
-          echo "$output"
-          if [[ $exit_code -eq 1 && "$output" == *"TEST_QUOTA_EXCEEDED"* ]]; then
-            echo "::warning title=Firebase Test Lab::Test quota exceeded."
-            exit_code=0
-          fi
-          exit "$exit_code"
+          name: |
+            build-template_debug
+            build-template_release
