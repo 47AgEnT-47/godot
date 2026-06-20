@@ -11,7 +11,6 @@
         "module_theora_enabled": false,
         "module_assimp_enabled": false,
         "module_bvh_enabled": false,
-        "module_csg_enabled": false,
         "module_dds_enabled": false,
         "module_gltf_enabled": false,
         "module_gridmap_enabled": false,
@@ -21,7 +20,6 @@
         "module_openxr_enabled": false,
         "module_recast_enabled": false,
         "module_squish_enabled": false,
-        "module_svg_enabled": false,
         "module_tinyexr_enabled": false,
         "module_vhacd_enabled": false,
         "module_webrtc_enabled": false
